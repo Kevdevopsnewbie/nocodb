@@ -1,13 +1,14 @@
 import type { ComputedRef, Ref } from 'vue'
-import {
+import type {
   type Api,
+  CalendarRangeType,
   type CalendarType,
   type ColumnType,
   type PaginatedType,
   type TableType,
-  UITypes,
   type ViewType,
 } from 'nocodb-sdk'
+import { UITypes } from 'nocodb-sdk'
 import dayjs from 'dayjs'
 import { extractPkFromRow, extractSdkResponseErrorMsg, rowPkData } from '~/utils'
 import { IsPublicInj, type Row, ref, storeToRefs, useBase, useInjectionState, useUndoRedo } from '#imports'
@@ -97,7 +98,7 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
 
     const { sorts, nestedFilters } = useSmartsheetStoreOrThrow()
 
-    const { sharedView, fetchSharedViewData, fetchSharedViewActiveDate } = useSharedView()
+    const { sharedView, fetchSharedViewData, fetchSharedViewActiveDate, fetchSharedCalendarViewData } = useSharedView()
 
     const calendarMetaData = ref<CalendarType>({})
 
@@ -110,14 +111,15 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
 
     const calendarRange = ref<
       Array<{
-        fk_from_col: ColumnType | null
-        fk_to_col: ColumnType | null
+        fk_from_col: ColumnType
+        fk_to_col?: ColumnType | null
+        id: string
       }>
     >([])
 
     const calDataType = computed(() => {
       if (!calendarRange.value || !calendarRange.value[0]) return null
-      return calendarRange.value[0]!.fk_from_col!.uidt
+      return calendarRange.value[0]?.fk_from_col?.uidt
     })
 
     const sideBarFilter = computed(() => {
@@ -219,7 +221,6 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
         }
 
         fromDate = fromDate!.format('YYYY-MM-DD HH:mm:ssZ')
-        toDate = toDate!.format('YYYY-MM-DD HH:mm:ssZ')
         prevDate = prevDate!.format('YYYY-MM-DD HH:mm:ssZ')
         nextDate = nextDate!.format('YYYY-MM-DD HH:mm:ssZ')
 
@@ -337,12 +338,105 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
       }
     }
 
-    const filterJSON = computed(() => {
-      if (!calendarRange.value) return []
-      const combinedFilters: any = {
-        is_group: true,
-        logical_op: 'and',
-        children: [],
+    const fetchActiveDates = async () => {
+      if (!base?.value?.id || !meta.value?.id || !viewMeta.value?.id || !calendarRange.value) return
+      let prevDate: dayjs.Dayjs | string | null = null
+      let nextDate: dayjs.Dayjs | string | null = null
+      let fromDate: dayjs.Dayjs | string | null = null
+
+      if (activeCalendarView.value === 'week' || activeCalendarView.value === 'day' || activeCalendarView.value === 'month') {
+        const startOfMonth = pageDate.value.startOf('month')
+        const endOfMonth = pageDate.value.endOf('month')
+
+        const daysToDisplay = Math.max(endOfMonth.diff(startOfMonth, 'day') + 1, 35)
+        fromDate = startOfMonth.subtract((startOfMonth.day() + 7) % 7, 'day')
+        const toDate = fromDate.add(daysToDisplay, 'day')
+        prevDate = fromDate.subtract(1, 'day').endOf('day')
+        nextDate = toDate.add(1, 'day').startOf('day')
+      } else if (activeCalendarView.value === 'year') {
+        prevDate = selectedDate.value.startOf('year').subtract(1, 'day').endOf('day')
+        nextDate = selectedDate.value.endOf('year').add(1, 'day').startOf('day')
+      }
+
+      prevDate = prevDate!.format('YYYY-MM-DD HH:mm:ssZ')
+      nextDate = nextDate!.format('YYYY-MM-DD HH:mm:ssZ')
+
+      const activeDateFilter: Array<any> = []
+
+      if (!base?.value?.id || !meta.value?.id || !viewMeta.value?.id) return
+
+      try {
+        const res = !isPublic.value
+          ? await api.dbCalendarViewRowCount.dbCalendarViewRowCount('noco', base.value.id!, meta.value!.id!, viewMeta.value.id, {
+              ...queryParams.value,
+              from_date: prevDate,
+              to_date: nextDate,
+            })
+          : await fetchSharedViewActiveDate({
+              from_date: prevDate,
+              to_date: nextDate,
+              sortsArr: sorts.value,
+              filtersArr: activeDateFilter,
+            })
+        activeDates.value = res.dates.map((dateObj: unknown) => dayjs(dateObj))
+
+        if (res.count > 3000 && activeCalendarView.value !== 'year') {
+          message.warning(
+            'This current date range has more than 3000 records. Some records may not be displayed. To get complete records, contact support',
+          )
+        }
+      } catch (e) {
+        activeDates.value = []
+        message.error(`${t('msg.error.fetchingActiveDates')} ${await extractSdkResponseErrorMsg(e)}`)
+        console.log(e)
+      }
+    }
+
+    const changeCalendarView = async (view: 'month' | 'year' | 'day' | 'week') => {
+      try {
+        activeCalendarView.value = view
+        await updateCalendarMeta({
+          meta: {
+            ...(typeof calendarMetaData.value.meta === 'string'
+              ? JSON.parse(calendarMetaData.value.meta)
+              : calendarMetaData.value.meta),
+            active_view: view,
+          },
+        })
+        if (activeCalendarView.value === 'week') {
+          selectedTime.value = null
+        }
+      } catch (e) {
+        message.error('Error changing calendar view')
+        console.log(e)
+      }
+    }
+
+    async function loadCalendarMeta() {
+      if (!viewMeta?.value?.id || !meta?.value?.columns) return
+      try {
+        const res = isPublic.value ? (sharedView.value?.view as CalendarType) : await $api.dbView.calendarRead(viewMeta.value.id)
+        calendarMetaData.value = res
+        const calMeta = typeof res.meta === 'string' ? JSON.parse(res.meta) : res.meta
+        activeCalendarView.value = calMeta?.active_view
+        if (!activeCalendarView.value) activeCalendarView.value = 'month'
+        calendarRange.value = res?.calendar_range?.map((range: CalendarRangeType) => {
+          return {
+            id: range.id,
+            fk_from_col: meta.value?.columns?.find((col) => col.id === range.fk_from_column_id),
+            fk_to_col: range.fk_to_column_id ? meta.value?.columns?.find((col) => col.id === range.fk_to_column_id) : null,
+          }
+        }) as any
+      } catch (e) {
+        message.error(`Error loading calendar meta ${await extractSdkResponseErrorMsg(e)}`)
+      }
+    }
+
+    async function loadCalendarData() {
+      if ((!base?.value?.id || !meta.value?.id || !viewMeta.value?.id) && !isPublic?.value) return
+
+      if (activeCalendarView.value === 'year') {
+        return
       }
 
       let prevDate: string | null | dayjs.Dayjs = null
@@ -381,234 +475,36 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
           nextDate = selectedDate.value.add(1, 'day').startOf('day')
           break
       }
-
-      fromDate = fromDate!.format('YYYY-MM-DD HH:mm:ssZ')
-      toDate = toDate!.format('YYYY-MM-DD HH:mm:ssZ')
       prevDate = prevDate!.format('YYYY-MM-DD HH:mm:ssZ')
       nextDate = nextDate!.format('YYYY-MM-DD HH:mm:ssZ')
 
-      calendarRange.value.forEach((range) => {
-        const fromCol = range.fk_from_col
-        const toCol = range.fk_to_col
-        let rangeFilter: any = []
-
-        if (fromCol && toCol) {
-          rangeFilter = [
-            {
-              is_group: true,
-              logical_op: 'and',
-              children: [
-                {
-                  fk_column_id: fromCol.id,
-                  comparison_op: 'lt',
-                  comparison_sub_op: 'exactDate',
-                  value: nextDate,
-                },
-                {
-                  fk_column_id: toCol.id,
-                  comparison_op: 'gt',
-                  comparison_sub_op: 'exactDate',
-                  value: prevDate,
-                },
-              ],
-            },
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'eq',
-              logical_op: 'or',
-              comparison_sub_op: 'exactDate',
-              value: fromDate,
-            },
-          ]
-        } else if (fromCol) {
-          rangeFilter = [
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'lt',
-              comparison_sub_op: 'exactDate',
-              value: nextDate,
-            },
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'gt',
-              comparison_sub_op: 'exactDate',
-              value: prevDate,
-            },
-          ]
-        }
-        if (rangeFilter.length > 0) {
-          combinedFilters.children.push(rangeFilter)
-        }
-      })
-      return combinedFilters.children.length > 0 ? [combinedFilters] : []
-    })
-
-    const fetchActiveDates = async () => {
-      if (!base?.value?.id || !meta.value?.id || !viewMeta.value?.id || !calendarRange.value) return
-      let prevDate: dayjs.Dayjs | string | null = null
-      let nextDate: dayjs.Dayjs | string | null = null
-      let fromDate: dayjs.Dayjs | string | null = null
-
-      if (activeCalendarView.value === 'week' || activeCalendarView.value === 'day' || activeCalendarView.value === 'month') {
-        const startOfMonth = pageDate.value.startOf('month')
-        const endOfMonth = pageDate.value.endOf('month')
-
-        const daysToDisplay = Math.max(endOfMonth.diff(startOfMonth, 'day') + 1, 35)
-        fromDate = startOfMonth.subtract((startOfMonth.day() + 7) % 7, 'day')
-        const toDate = fromDate.add(daysToDisplay, 'day')
-        prevDate = fromDate.subtract(1, 'day').endOf('day')
-        nextDate = toDate.add(1, 'day').startOf('day')
-      } else if (activeCalendarView.value === 'year') {
-        fromDate = selectedDate.value.startOf('year')
-        prevDate = selectedDate.value.startOf('year').subtract(1, 'day').endOf('day')
-        nextDate = selectedDate.value.endOf('year').add(1, 'day').startOf('day')
-      }
-
-      prevDate = prevDate!.format('YYYY-MM-DD HH:mm:ssZ')
-      nextDate = nextDate!.format('YYYY-MM-DD HH:mm:ssZ')
-      fromDate = fromDate!.format('YYYY-MM-DD HH:mm:ssZ')
-
-      const activeDateFilter: Array<any> = []
-
-      calendarRange.value.forEach((range) => {
-        const fromCol = range.fk_from_col
-        const toCol = range.fk_to_col
-        let rangeFilter: any = []
-
-        if (fromCol && toCol) {
-          rangeFilter = [
-            {
-              is_group: true,
-              logical_op: 'and',
-              children: [
-                {
-                  fk_column_id: fromCol.id,
-                  comparison_op: 'lt',
-                  comparison_sub_op: 'exactDate',
-                  value: nextDate,
-                },
-                {
-                  fk_column_id: toCol.id,
-                  comparison_op: 'gt',
-                  comparison_sub_op: 'exactDate',
-                  value: prevDate,
-                },
-              ],
-            },
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'eq',
-              logical_op: 'or',
-              comparison_sub_op: 'exactDate',
-              value: fromDate,
-            },
-          ]
-        } else if (fromCol) {
-          rangeFilter = [
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'lt',
-              comparison_sub_op: 'exactDate',
-              value: nextDate,
-            },
-            {
-              fk_column_id: fromCol.id,
-              comparison_op: 'gt',
-              comparison_sub_op: 'exactDate',
-              value: prevDate,
-            },
-          ]
-        }
-
-        activeDateFilter.push(rangeFilter)
-      })
-
-      if (!base?.value?.id || !meta.value?.id || !viewMeta.value?.id) return
-
-      try {
-        const res = !isPublic.value
-          ? await api.dbViewRow.calendarCount('noco', base.value.id!, meta.value!.id!, viewMeta.value.id, {
-              ...queryParams.value,
-              ...{},
-              ...{},
-              ...{ filterArrJson: JSON.stringify([...activeDateFilter]) },
-            })
-          : await fetchSharedViewActiveDate({
-              sortsArr: sorts.value,
-              filtersArr: activeDateFilter,
-            })
-        activeDates.value = res.map((dateObj: unknown) => dayjs(dateObj))
-      } catch (e) {
-        activeDates.value = []
-        message.error(`${t('msg.error.fetchingActiveDates')} ${await extractSdkResponseErrorMsg(e)}`)
-        console.log(e)
-      }
-    }
-
-    const changeCalendarView = async (view: 'month' | 'year' | 'day' | 'week') => {
-      try {
-        activeCalendarView.value = view
-        await updateCalendarMeta({
-          meta: {
-            ...(typeof calendarMetaData.value.meta === 'string'
-              ? JSON.parse(calendarMetaData.value.meta)
-              : calendarMetaData.value.meta),
-            active_view: view,
-          },
-        })
-        if (activeCalendarView.value === 'week') {
-          selectedTime.value = null
-        }
-      } catch (e) {
-        message.error('Error changing calendar view')
-        console.log(e)
-      }
-    }
-
-    async function loadCalendarMeta() {
-      if (!viewMeta?.value?.id || !meta?.value?.columns) return
-      try {
-        const res = isPublic.value ? (sharedView.value?.view as CalendarType) : await $api.dbView.calendarRead(viewMeta.value.id)
-        calendarMetaData.value = res
-        const calMeta = typeof res.meta === 'string' ? JSON.parse(res.meta) : res.meta
-        activeCalendarView.value = calMeta?.active_view
-        if (!activeCalendarView.value) activeCalendarView.value = 'month'
-        calendarRange.value = res?.calendar_range?.map((range: any) => {
-          return {
-            fk_from_col: meta.value?.columns?.find((col) => col.id === range.fk_from_column_id),
-            fk_to_col: range.fk_to_column_id ? meta.value?.columns?.find((col) => col.id === range.fk_to_column_id) : null,
-          }
-        }) as any
-      } catch (e) {
-        message.error(`Error loading calendar meta ${await extractSdkResponseErrorMsg(e)}`)
-      }
-    }
-
-    async function loadCalendarData() {
-      if ((!base?.value?.id || !meta.value?.id || !viewMeta.value?.id || !filterJSON.value) && !isPublic?.value) return
       try {
         isCalendarDataLoading.value = true
 
         const res = !isPublic.value
-          ? await api.dbViewRow.list(
+          ? await api.dbCalendarViewRow.list(
               'noco',
               base.value.id!,
               meta.value!.id!,
               viewMeta.value!.id!,
               {
-                ...queryParams.value,
-                ...(isUIAllowed('filterSync')
-                  ? { filterArrJson: JSON.stringify([...filterJSON.value]) }
-                  : { filterArrJson: JSON.stringify([nestedFilters.value, ...filterJSON.value]) }),
-                where: where?.value ?? '',
+                from_date: prevDate,
+                to_date: nextDate,
               },
               {
-                headers: {
-                  'xc-ignore-pagination': true,
-                },
+                ...queryParams.value,
+                ...(isUIAllowed('filterSync') ? { filterArrJson: [] } : { filterArrJson: JSON.stringify([nestedFilters.value]) }),
+                where: where?.value ?? '',
+                filterArrJson: JSON.stringify([...nestedFilters.value]),
               },
             )
-          : await fetchSharedViewData({ sortsArr: sorts.value, filtersArr: filterJSON.value })
+          : await fetchSharedCalendarViewData({
+              sortsArr: sorts.value,
+              from_date: prevDate,
+              to_date: nextDate,
+              filtersArr: nestedFilters.value,
+              where: where?.value ?? '',
+            })
         formattedData.value = formatData(res!.list)
       } catch (e) {
         message.error(`${t('msg.error.fetchingCalendarData')} ${await extractSdkResponseErrorMsg(e)}`)
@@ -620,11 +516,23 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
 
     async function updateCalendarMeta(updateObj: Partial<CalendarType>) {
       if (!viewMeta?.value?.id || !isUIAllowed('dataEdit') || isPublic.value) return
+
+      const updateValue = {
+        ...(typeof calendarMetaData.value.meta === 'string'
+          ? JSON.parse(calendarMetaData.value.meta)
+          : calendarMetaData.value.meta),
+        ...(typeof updateObj.meta === 'string' ? JSON.parse(updateObj.meta) : updateObj.meta),
+      }
+
       try {
-        await $api.dbView.calendarUpdate(viewMeta.value.id, updateObj)
+        await $api.dbView.calendarUpdate(viewMeta.value.id, {
+          ...updateObj,
+          meta: JSON.stringify(updateValue),
+        })
         calendarMetaData.value = {
           ...calendarMetaData.value,
           ...updateObj,
+          meta: updateValue,
         }
       } catch (e) {
         message.error('Error updating changes')
@@ -782,17 +690,21 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
 
     watch(selectedDate, async (value, oldValue) => {
       if (activeCalendarView.value === 'month' || activeCalendarView.value === 'week') {
-        if (sideBarFilterOption.value === 'selectedDate') {
+        if (sideBarFilterOption.value === 'selectedDate' && showSideMenu.value) {
           await loadSidebarData()
         }
       } else if (activeCalendarView.value === 'year') {
         if (value.year() !== oldValue.year()) {
           await Promise.all([loadCalendarData(), loadSidebarData(), await fetchActiveDates()])
-        } else if (sideBarFilterOption.value === 'selectedDate') {
+        } else if (sideBarFilterOption.value === 'selectedDate' && showSideMenu.value) {
           await loadSidebarData()
         }
       } else {
-        await Promise.all([loadSidebarData(), loadCalendarData()])
+        if (showSideMenu.value) {
+          await Promise.all([loadSidebarData(), loadCalendarData()])
+        } else {
+          await Promise.all([loadCalendarData()])
+        }
       }
 
       if (activeCalendarView.value === 'year' && value.year() !== oldValue.year()) {
@@ -801,7 +713,7 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
     })
 
     watch(selectedTime, async () => {
-      if (calDataType.value !== UITypes.Date) {
+      if (calDataType.value !== UITypes.Date && showSideMenu.value) {
         await loadSidebarData()
       }
     })
@@ -821,9 +733,8 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
     watch(activeCalendarView, async (value, oldValue) => {
       if (oldValue === 'week') {
         pageDate.value = selectedDate.value
-        selectedDate.value = selectedDateRange.value.start
-        selectedMonth.value = selectedDateRange.value.start
-        selectedTime.value = selectedDateRange.value.start
+        selectedMonth.value = selectedDate.value ?? selectedDateRange.value.start
+        selectedTime.value = selectedDate.value ?? selectedDateRange.value.start
       } else if (oldValue === 'month') {
         selectedDate.value = selectedMonth.value
         pageDate.value = selectedDate.value
@@ -850,7 +761,15 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
         }
       }
       sideBarFilterOption.value = activeCalendarView.value ?? 'allRecords'
-      await Promise.all([loadCalendarData(), loadSidebarData(), fetchActiveDates()])
+      if (activeCalendarView.value === 'year') {
+        await Promise.all([loadSidebarData(), fetchActiveDates()])
+      } else {
+        await Promise.all([loadCalendarData(), loadSidebarData(), fetchActiveDates()])
+      }
+    })
+
+    watch(showSideMenu, async (val) => {
+      if (val) await loadSidebarData()
     })
 
     watch(sideBarFilterOption, async () => {
@@ -867,6 +786,7 @@ const [useProvideCalendarViewStore, useCalendarViewStore] = useInjectionState(
     })
 
     return {
+      fetchActiveDates,
       formattedSideBarData,
       loadMoreSidebarData,
       loadSidebarData,

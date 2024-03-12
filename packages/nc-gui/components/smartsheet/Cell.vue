@@ -29,6 +29,7 @@ import {
   isJSON,
   isManualSaved,
   isMultiSelect,
+  isNumericFieldType,
   isPercent,
   isPhoneNumber,
   isPrimary,
@@ -142,14 +143,7 @@ const navigate = (dir: NavigateDir, e: KeyboardEvent) => {
 }
 
 const isNumericField = computed(() => {
-  return (
-    isInt(column.value, abstractType.value) ||
-    isFloat(column.value, abstractType.value) ||
-    isDecimal(column.value) ||
-    isCurrency(column.value) ||
-    isPercent(column.value) ||
-    isDuration(column.value)
-  )
+  return isNumericFieldType(column.value, abstractType.value)
 })
 
 // disable contexxtmenu event propagation when cell is in
@@ -202,7 +196,7 @@ onUnmounted(() => {
       {
         'text-brand-500': isPrimary(column) && !props.virtual && !isForm && !isCalendar,
         'nc-grid-numeric-cell-right': isGrid && isNumericField && !isEditColumnMenu && !isForm && !isExpandedFormOpen,
-        'h-10': isForm && !isSurveyForm && !isAttachment(column) && !props.virtual,
+        'h-10': isForm && !isSurveyForm && !isAttachment(column) && !isTextArea(column) && !isJSON(column) && !props.virtual,
         'nc-grid-numeric-cell-left': (isForm && isNumericField && isExpandedFormOpen) || isEditColumnMenu,
         '!min-h-30': isTextArea(column) && (isForm || isSurveyForm),
       },

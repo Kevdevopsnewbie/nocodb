@@ -239,20 +239,22 @@ onMounted(() => {
     <div
       v-if="sharedFormView"
       style="height: max(40vh, 225px); min-height: 225px"
-      class="max-w-[max(33%,600px)] mx-auto flex flex-col justify-end"
+      class="w-full max-w-[max(33%,600px)] mx-auto flex flex-col justify-end"
     >
       <div class="px-4 md:px-0 flex flex-col justify-end">
-        <h1 class="text-2xl font-bold text-gray-900 self-center my-4" data-testid="nc-survey-form__heading">
+        <h1 class="text-2xl font-bold text-gray-900 self-center text-center my-4" data-testid="nc-survey-form__heading">
           {{ sharedFormView.heading }}
         </h1>
-
-        <h2
-          v-if="sharedFormView.subheading && sharedFormView.subheading !== ''"
-          class="font-medium text-base text-gray-500 dark:text-gray-300 self-center mb-4"
-          data-testid="nc-survey-form__sub-heading"
-        >
-          {{ sharedFormView?.subheading }}
-        </h2>
+        <div v-if="sharedFormView.subheading?.trim()" class="w-full">
+          <LazyCellRichText
+            :value="sharedFormView.subheading"
+            class="font-medium text-base text-gray-500 dark:text-slate-300 !h-auto mb-4 -ml-1"
+            is-form-field
+            read-only
+            sync-value-change
+            data-testid="nc-survey-form__sub-heading"
+          />
+        </div>
       </div>
     </div>
 
@@ -275,40 +277,48 @@ onMounted(() => {
               class="nc-form-column-description text-gray-500 text-sm"
               data-testid="nc-survey-form__field-description"
             >
-              {{ field?.description }}
+              <LazyCellRichText :value="field?.description" class="!h-auto -ml-1" is-form-field read-only sync-value-change />
             </div>
 
-            <LazySmartsheetDivDataCell v-if="field.title" class="relative nc-form-data-cell">
-              <LazySmartsheetVirtualCell
-                v-if="isVirtualCol(field)"
-                v-model="formState[field.title]"
-                class="mt-0 nc-input h-auto"
-                :row="{ row: {}, oldRow: {}, rowMeta: {} }"
-                :data-testid="`nc-survey-form__input-${field.title.replaceAll(' ', '')}`"
-                :column="field"
-              />
+            <NcTooltip :disabled="!field?.read_only">
+              <template #title> {{ $t('activity.preFilledFields.lockedFieldTooltip') }} </template>
+              <LazySmartsheetDivDataCell v-if="field.title" class="relative nc-form-data-cell">
+                <LazySmartsheetVirtualCell
+                  v-if="isVirtualCol(field)"
+                  v-model="formState[field.title]"
+                  class="mt-0 nc-input h-auto"
+                  :class="{
+                    readonly: field?.read_only,
+                  }"
+                  :row="{ row: {}, oldRow: {}, rowMeta: {} }"
+                  :data-testid="`nc-survey-form__input-${field.title.replaceAll(' ', '')}`"
+                  :column="field"
+                  :read-only="field?.read_only"
+                />
 
-              <LazySmartsheetCell
-                v-else
-                v-model="formState[field.title]"
-                class="nc-input h-auto"
-                :class="parseProp(field?.meta)?.isList ? 'layout-list' : ''"
-                :data-testid="`nc-survey-form__input-${field.title.replaceAll(' ', '')}`"
-                :column="field"
-                edit-enabled
-              />
+                <LazySmartsheetCell
+                  v-else
+                  v-model="formState[field.title]"
+                  class="nc-input h-auto"
+                  :class="{ 'layout-list': parseProp(field?.meta)?.isList, 'readonly': field?.read_only }"
+                  :data-testid="`nc-survey-form__input-${field.title.replaceAll(' ', '')}`"
+                  :column="field"
+                  :edit-enabled="!field?.read_only"
+                  :read-only="field?.read_only"
+                />
 
-              <div class="flex flex-col gap-2 text-slate-500 dark:text-slate-300 text-[0.75rem] my-2 px-1">
-                <div v-for="error of v$.localState[field.title]?.$errors" :key="error" class="text-red-500">
-                  {{ error.$message }}
+                <div class="flex flex-col gap-2 text-slate-500 dark:text-slate-300 text-[0.75rem] my-2 px-1">
+                  <div v-for="error of v$.localState[field.title]?.$errors" :key="error" class="text-red-500">
+                    {{ error.$message }}
+                  </div>
+
+                  <div v-if="field.uidt === UITypes.LongText" class="text-sm text-gray-500 flex flex-wrap items-center">
+                    {{ $t('general.shift') }} <MdiAppleKeyboardShift class="mx-1 text-primary" /> + {{ $t('general.enter') }}
+                    <MaterialSymbolsKeyboardReturn class="mx-1 text-primary" /> {{ $t('msg.makeLineBreak') }}
+                  </div>
                 </div>
-
-                <div v-if="field.uidt === UITypes.LongText" class="text-sm text-gray-500 flex flex-wrap items-center">
-                  {{ $t('general.shift') }} <MdiAppleKeyboardShift class="mx-1 text-primary" /> + {{ $t('general.enter') }}
-                  <MaterialSymbolsKeyboardReturn class="mx-1 text-primary" /> {{ $t('msg.makeLineBreak') }}
-                </div>
-              </div>
-            </LazySmartsheetDivDataCell>
+              </LazySmartsheetDivDataCell>
+            </NcTooltip>
           </div>
 
           <div class="ml-1 mt-4 flex w-full text-lg">
@@ -374,20 +384,35 @@ onMounted(() => {
           <Transition name="slide-left">
             <div v-if="submitted" class="flex flex-col justify-center items-center text-center">
               <a-alert
+                class="!my-4 !py-4 !rounded-lg text-left w-full"
                 type="success"
-                class="!my-4 !py-4 text-center !rounded-lg"
                 data-testid="nc-survey-form__success-msg"
                 outlined
-                :message="sharedFormView?.success_msg || $t('msg.info.thankYou')"
-                :description="sharedFormView?.success_msg ? undefined : $t('msg.info.submittedFormData')"
-              />
+              >
+                <template #message>
+                  <LazyCellRichText
+                    v-if="sharedFormView?.success_msg?.trim()"
+                    :value="sharedFormView?.success_msg"
+                    class="!h-auto -ml-1"
+                    is-form-field
+                    read-only
+                    sync-value-change
+                  />
+                  <span v-else>
+                    {{ $t('msg.info.thankYou') }}
+                  </span>
+                </template>
+                <template v-if="!sharedFormView?.success_msg?.trim()" #description>
+                  {{ $t('msg.info.submittedFormData') }}
+                </template>
+              </a-alert>
 
-              <div v-if="sharedFormView" class="mt-3">
-                <p v-if="sharedFormView?.show_blank_form" class="text-xs text-slate-500 dark:text-slate-300 text-center my-4">
+              <div v-if="sharedFormView" class="mt-3 w-full">
+                <p v-if="sharedFormView?.show_blank_form" class="text-xs text-slate-500 dark:text-slate-300 text-left my-4">
                   {{ $t('labels.newFormLoaded') }} {{ secondsRemain }} {{ $t('general.seconds') }}
                 </p>
 
-                <div v-if="sharedFormView?.submit_another_form" class="text-center">
+                <div v-if="sharedFormView?.submit_another_form" class="text-right">
                   <NcButton type="primary" size="medium" data-testid="nc-survey-form__btn-submit-another-form" @click="resetForm">
                     {{ $t('activity.submitAnotherForm') }}
                   </NcButton>

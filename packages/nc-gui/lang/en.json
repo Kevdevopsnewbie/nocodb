@@ -926,7 +926,15 @@
     "startCommenting": "Start commenting!",
     "clearForm": "Clear Form",
     "addFieldFromFormView": "Add Field",
-    "selectAllFields": "Select all fields"
+    "selectAllFields": "Select all fields",
+    "preFilledFields": {
+      "title": "Enable Pre-fill",
+      "default": "Default",
+      "locked": "Lock pre-filled fields as read-only",
+      "hidden": "Hide pre-filled fields",
+      "lockedFieldTooltip": "Pre-filled value"
+    },
+    "getPreFilledLink": "Get Pre-filled Link"
   },
   "tooltip": {
     "reachedSourceLimit": "Limited to only one data source for the moment",
@@ -956,7 +964,9 @@
     "clearMetadata": "Clear all metadata from meta tables.",
     "clientKey": "Select .key file",
     "clientCert": "Select .cert file",
-    "clientCA": "Select CA file"
+    "clientCA": "Select CA file",
+    "preFillFormInfo": "Generate share form URL with pre-filled field data. To get a pre-filled link, make sure you’ve filled the necessary fields in the form view builder.",
+    "surveyFormInfo": "Form mode with one field per page"
   },
   "placeholder": {
     "selectSlackChannels": "Select Slack channels",
@@ -1181,6 +1191,7 @@
       "formInput": "Enter form input label",
       "formHelpText": "Add some help text",
       "onlyCreator": "Only visible to Creator",
+      "formTitle": "Add form Title",
       "formDesc": "Add form description",
       "beforeEnablePwd": "Restrict access with a password",
       "afterEnablePwd": "Access is password restricted",
@@ -1305,8 +1316,10 @@
       "groupPasteIsNotSupportedOnLinksColumn": "Group paste operation is not supported on Links/LinkToAnotherRecord column",
       "groupClearIsNotSupportedOnLinksColumn": "Group clear operation is not supported on Links/LinkToAnotherRecord column",
       "upgradeToEnterpriseEdition": "Upgrade to Enterprise Edition {extraInfo}",
+      "thisFeatureIsOnlyAvailableInEnterpriseEdition": "This feature is only available in enterprise edition",
       "yourCurrentRoleIs": "Your current role is",
-      "pleaseRequestAccessForView": "Please request for higher permission from the Admin / Base owner / Workspace owner to get access to this {viewName}"
+      "pleaseRequestAccessForView": "Please request for higher permission from the Admin / Base owner / Workspace owner to get access to this {viewName}",
+      "preventHideAllOptions": "You cannot hide all options if field is required"
     },
     "error": {
       "fetchingCalendarData": "Error fetching calendar data",

@@ -694,7 +694,7 @@
     "appearanceSettings": "Ajustes de apariencia",
     "backgroundColor": "Color de Fondo",
     "hideNocodbBranding": "Ocultar marca NocoDB",
-    "showOnConditions": "Mostrar en condiciones",
+    "showOnConditions": "Show on conditions",
     "showFieldOnConditionsMet": "Muestra el campo sólo cuando se cumplen las condiciones",
     "limitOptions": "Limit options",
     "limitOptionsSubtext": "Limit options visible to users by selecting available options",
@@ -926,7 +926,15 @@
     "startCommenting": "¡Empieza a comentar!",
     "clearForm": "Limpiar formulario",
     "addFieldFromFormView": "Añadir Campo",
-    "selectAllFields": "Seleccionar todos los campos"
+    "selectAllFields": "Seleccionar todos los campos",
+    "preFilledFields": {
+      "title": "Enable Pre-fill",
+      "default": "Default",
+      "locked": "Lock pre-filled fields as read-only",
+      "hidden": "Hide pre-filled fields",
+      "lockedFieldTooltip": "Pre-filled value"
+    },
+    "getPreFilledLink": "Get Pre-filled Link"
   },
   "tooltip": {
     "reachedSourceLimit": "Limitado a una única fuente de datos por el momento",
@@ -956,7 +964,9 @@
     "clearMetadata": "Limpiar todos los metadata de las tablas meta.",
     "clientKey": "Seleccionar archivo .key",
     "clientCert": "Seleccionar archivo .cert",
-    "clientCA": "Seleccionar archivo CA"
+    "clientCA": "Seleccionar archivo CA",
+    "preFillFormInfo": "Generate share form URL with pre-filled field data. To get a pre-filled link, make sure you’ve filled the necessary fields in the form view builder.",
+    "surveyFormInfo": "Form mode with one field per page"
   },
   "placeholder": {
     "selectSlackChannels": "Seleccionar canales de Slack",
@@ -1181,6 +1191,7 @@
       "formInput": "Ingrese la etiqueta de entrada del formulario",
       "formHelpText": "Añade algo de texto de ayuda",
       "onlyCreator": "Sólo visible por el creador",
+      "formTitle": "Add form Title",
       "formDesc": "Añadir descripción de formulario",
       "beforeEnablePwd": "Restringir acceso mediante contraseña",
       "afterEnablePwd": "Restricción mediante contraseña",
@@ -1305,8 +1316,10 @@
       "groupPasteIsNotSupportedOnLinksColumn": "Group paste operation is not supported on Links/LinkToAnotherRecord column",
       "groupClearIsNotSupportedOnLinksColumn": "Group clear operation is not supported on Links/LinkToAnotherRecord column",
       "upgradeToEnterpriseEdition": "Upgrade to Enterprise Edition {extraInfo}",
+      "thisFeatureIsOnlyAvailableInEnterpriseEdition": "This feature is only available in enterprise edition",
       "yourCurrentRoleIs": "Your current role is",
-      "pleaseRequestAccessForView": "Please request for higher permission from the Admin / Base owner / Workspace owner to get access to this {viewName}"
+      "pleaseRequestAccessForView": "Please request for higher permission from the Admin / Base owner / Workspace owner to get access to this {viewName}",
+      "preventHideAllOptions": "You cannot hide all options if field is required"
     },
     "error": {
       "fetchingCalendarData": "Error fetching calendar data",

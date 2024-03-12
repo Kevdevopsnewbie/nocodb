@@ -318,12 +318,14 @@ class BaseModelSqlv2 {
       sortArr?: Sort[];
       sort?: string | string[];
       fieldsSet?: Set<string>;
+      limitOverride?: number;
     } = {},
     options: {
       ignoreViewFilterAndSort?: boolean;
       ignorePagination?: boolean;
       validateFormula?: boolean;
       throwErrorIfInvalidParams?: boolean;
+      limitOverride?: number;
     } = {},
   ): Promise<any> {
     const {
@@ -331,6 +333,7 @@ class BaseModelSqlv2 {
       ignorePagination = false,
       validateFormula = false,
       throwErrorIfInvalidParams = false,
+      limitOverride,
     } = options;
 
     const { where, fields, ...rest } = this._getListArgs(args as any);
@@ -426,7 +429,24 @@ class BaseModelSqlv2 {
       if (createdCol) qb.orderBy(createdCol.column_name);
     }
 
-    if (!ignorePagination) applyPaginate(qb, rest);
+    if (rest.pks) {
+      const pks = rest.pks.split(',');
+      qb.where((qb) => {
+        pks.forEach((pk) => {
+          qb.orWhere(_wherePk(this.model.primaryKeys, pk));
+        });
+        return qb;
+      });
+    }
+
+    // if limitOverride is provided, use it as limit for the query (for internal usage eg. calendar, export)
+    if (!ignorePagination) {
+      if (!limitOverride) {
+        applyPaginate(qb, rest);
+      } else {
+        applyPaginate(qb, { ...rest, limit: limitOverride });
+      }
+    }
     const proto = await this.getProto();
 
     let data;
@@ -2105,7 +2125,8 @@ class BaseModelSqlv2 {
     obj.conditionGraph = args.conditionGraph || {};
     obj.limit = Math.max(
       Math.min(
-        args.limit || args.l || BaseModelSqlv2.config.limitDefault,
+        Math.max(+(args.limit || args.l), 0) ||
+          BaseModelSqlv2.config.limitDefault,
         BaseModelSqlv2.config.limitMax,
       ),
       BaseModelSqlv2.config.limitMin,
@@ -2113,6 +2134,7 @@ class BaseModelSqlv2 {
     obj.offset = Math.max(+(args.offset || args.o) || 0, 0);
     obj.fields = args.fields || args.f;
     obj.sort = args.sort || args.s;
+    obj.pks = args.pks;
     return obj;
   }
 
@@ -6159,7 +6181,14 @@ function validateFilterComparison(uidt: UITypes, op: any, sub_op?: any) {
   }
 
   if (sub_op) {
-    if (![UITypes.Date, UITypes.DateTime].includes(uidt)) {
+    if (
+      ![
+        UITypes.Date,
+        UITypes.DateTime,
+        UITypes.CreatedTime,
+        UITypes.LastModifiedTime,
+      ].includes(uidt)
+    ) {
       NcError.badRequest(`'${sub_op}' is not supported for UI Type'${uidt}'.`);
     }
     if (!COMPARISON_SUB_OPS.includes(sub_op)) {
@@ -6215,7 +6244,7 @@ export function extractCondition(
 
     if (aliasColObjMap[alias]) {
       if (
-        [UITypes.Date, UITypes.DateTime].includes(aliasColObjMap[alias].uidt)
+        [UITypes.Date, UITypes.DateTime, UITypes.LastModifiedTime, UITypes.CreatedTime].includes(aliasColObjMap[alias].uidt)
       ) {
         value = value?.split(',');
         // the first element would be sub_op
@@ -6371,7 +6400,8 @@ export function getListArgs(
   obj.conditionGraph = args.conditionGraph || {};
   obj.limit = Math.max(
     Math.min(
-      args?.limit || args?.l || BaseModelSqlv2.config.limitDefault,
+      Math.max(+(args?.limit || args?.l), 0) ||
+        BaseModelSqlv2.config.limitDefault,
       BaseModelSqlv2.config.limitMax,
     ),
     BaseModelSqlv2.config.limitMin,
@@ -6380,6 +6410,7 @@ export function getListArgs(
   obj.fields =
     args?.fields || args?.f || (ignoreAssigningWildcardSelect ? null : '*');
   obj.sort = args?.sort || args?.s || model.primaryKey?.[0]?.column_name;
+  obj.pks = args?.pks;
   return obj;
 }
 
